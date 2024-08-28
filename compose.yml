@@ -1,0 +1,24 @@
+services:
+
+  observium:
+    build: .
+    image: csiaeyes
+    container_name: observium-web
+    ports:
+      - "8089:80"
+      - "8161:161/udp"
+      - "8162:162/udp"
+    volumes:
+      - ./observium_data:/opt/observium
+      - ./rancid_data:/var/lib/rancid
+#      - ./mariadb_data:/var/lib/mysql
+    networks:
+      - observium-net
+
+#volumes:
+#  observium_data:
+#  rancid_data:
+
+networks:
+  observium-net:
+    driver: bridge
