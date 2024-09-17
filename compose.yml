@@ -1,4 +1,17 @@
 services:
+  
+  mariadb:
+    image: mariadb:latest
+    container_name: observium-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: observium
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: adminpassword
+    volumes:
+      - /data/etc/observium-db/data:/var/lib/mysql
+    networks:
+      - observium-net  
 
   observium:
     build: .
@@ -8,16 +21,19 @@ services:
       - "8089:80"
       - "8161:161/udp"
       - "8162:162/udp"
+    depends_on:
+      - mariadb
+    environment:
+      OBSERVIUM_DB_HOST: mariadb
+      OBSERVIUM_DB_USER: admin
+      OBSERVIUM_DB_PASSWORD: adminpassword
+      OBSERVIUM_DB_NAME: observium
     volumes:
-      - ./observium_data:/opt/observium
-      - ./rancid_data:/var/lib/rancid
-#      - ./mariadb_data:/var/lib/mysql
+      -  /data/etc/observium/logs/data:/opt/observium/logs
+      -  /data/etc/observium/rrd/data:/opt/observium/rrd
+      -  /data/etc/rancid/data:/var/lib/rancid
     networks:
       - observium-net
-
-#volumes:
-#  observium_data:
-#  rancid_data:
 
 networks:
   observium-net:
