@@ -2,20 +2,34 @@
 FROM debian:12
 MAINTAINER Edouard Bessou
 
-# Mettre à jour le système et installer les dépendances nécessaires
+# Mettre à jour le système et installer les dépendances nécessaires, y compris PHP 7.4 et Composer
 RUN apt-get update && apt-get install -y \
     wget \
-    libapache2-mod-php8.2 \
-    php8.2-cli \
-    php8.2-mysql \
-    php8.2-gd \
-    php8.2-bcmath \
-    php8.2-mbstring \
-    php8.2-opcache \
-    php8.2-apcu \
-    php8.2-curl \
-    php-json \
-    php-pear \
+    curl \
+    git \
+    unzip \
+    npm \
+    apt-transport-https \
+    lsb-release \
+    ca-certificates \
+    software-properties-common \
+    && curl -sSL https://packages.sury.org/php/README.txt | bash \
+    && apt-get update && apt-get install -y \
+    php7.4 \
+    php7.4-cli \
+    php7.4-mysql \
+    php7.4-gd \
+    php7.4-bcmath \
+    php7.4-mbstring \
+    php7.4-opcache \
+    php7.4-apcu \
+    php7.4-curl \
+    php7.4-snmp \
+    php7.4-sqlite3 \
+    php7.4-simplexml \
+    php7.4-xml \
+    php7.4-zip \
+    libapache2-mod-php7.4 \
     snmp \
     fping \
     python3-mysqldb \
@@ -35,6 +49,9 @@ RUN apt-get update && apt-get install -y \
     cron \
     && apt-get clean
 
+# Installer Composer
+RUN curl -sS https://getcomposer.org/installer | php && mv composer.phar /usr/local/bin/composer
+
 # Configurer le ServerName dans Apache pour éviter les avertissements
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
@@ -49,8 +66,8 @@ RUN cd /opt/observium \
     && mkdir logs rrd \
     && chown www-data:www-data rrd logs
 
-# Copier le fichier config.php dans le bon répertoire
-COPY config.php opt/observium/config.php
+# Configurer la connexion à la base de données dans config.php
+COPY config.php /opt/observium/config.php
 
 # Configurer Apache pour servir Observium
 RUN echo '<VirtualHost *:80>\n\
@@ -76,7 +93,31 @@ RUN echo '<VirtualHost *:80>\n\
     && a2enmod mpm_prefork \
     && apache2ctl restart
 
-# Installer et configurer RANCID
+# Télécharger et configurer PHP Weathermap
+RUN cd /opt/observium \
+    && git clone https://github.com/howardjones/network-weathermap.git weathermap \
+    && cp weathermap/configs/simple.conf weathermap/configs/myweathermap.conf \
+    && cd weathermap \
+    && composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true \
+    && composer install --ignore-platform-req=ext-simplexml \
+    && npm install jquery  # Installer jQuery via npm
+
+# Intégrer Weathermap à Observium
+RUN echo "\$config['weathermap']['enable'] = true;" >> /opt/observium/config.php \
+    && echo "\$config['weathermap']['path'] = \"/opt/observium/weathermap/\";" >> /opt/observium/config.php
+
+# Configurer Apache pour Weathermap
+RUN echo 'Alias /weathermap /opt/observium/weathermap\n\
+<Directory /opt/observium/weathermap>\n\
+    Options Indexes FollowSymLinks\n\
+    AllowOverride All\n\
+    Require all granted\n\
+</Directory>' >> /etc/apache2/sites-available/observium.conf
+
+# Activer l'éditeur de Weathermap en mode autonome
+RUN sed -i 's/$editorEnabled = false;/$editorEnabled = true;/' /opt/observium/weathermap/editor.php
+
+# Intégrer et configurer RANCID
 RUN useradd -m -s /bin/bash rancid \
     && mkdir -p /var/lib/rancid/SVN \
     && chown -R rancid:rancid /var/lib/rancid \
@@ -93,7 +134,10 @@ RUN echo "\$config['rancid_configs'][] = \"/var/lib/rancid/observium/configs/\";
     && echo "\$config['rancid_ignorecomments'] = 0;" >> /opt/observium/config.php \
     && echo "\$config['rancid_version'] = '3';" >> /opt/observium/config.php
 
-# Configurer les tâches cron pour Observium
+# Configurer les tâches cron pour Weathermap
+RUN echo "*/5 * * * * /opt/observium/weathermap/map-poller.php /opt/observium/weathermap/configs/myweathermap.conf" > /etc/cron.d/weathermap
+
+# Configurer les tâches cron pour Observium et RANCID
 RUN echo "33  */6   * * *   root    /opt/observium/observium-wrapper discovery >> /dev/null 2>&1\n\
 */5 *     * * *   root    /opt/observium/observium-wrapper discovery --host new >> /dev/null 2>&1\n\
 */5 *     * * *   root    /opt/observium/observium-wrapper poller >> /dev/null 2>&1\n\
